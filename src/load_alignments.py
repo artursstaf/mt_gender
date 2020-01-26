@@ -1,5 +1,5 @@
 """ Usage:
-    <file-name> --ds=DATASET_FILE --bi=IN_FILE --align=ALIGN_FILE --out=OUT_FILE --lang=LANG  [--debug]
+    <file-name> --ds=DATASET_FILE --bi=IN_FILE --align=ALIGN_FILE --out=OUT_FILE --lang=LANG  [--genders=GENDERS] [--debug]
 """
 # External imports
 import logging
@@ -14,6 +14,7 @@ from typing import List
 import csv
 
 # Local imports
+from languages.genders_file import GendersFile
 from languages.spacy_support import SpacyPredictor
 # from languages.german import GermanPredictor
 from languages.gendered_article import GenderedArticlePredictor, \
@@ -21,7 +22,8 @@ from languages.gendered_article import GenderedArticlePredictor, \
 from languages.pymorph_support import PymorphPredictor
 from languages.semitic_languages import HebrewPredictor, ArabicPredictor
 from evaluate import evaluate_bias
-#=-----
+
+# =-----
 
 LANGAUGE_PREDICTOR = {
     "es": lambda: SpacyPredictor("es"),
@@ -34,6 +36,7 @@ LANGAUGE_PREDICTOR = {
     "de": lambda: GenderedArticlePredictor("de", get_german_determiners, GERMAN_EXCEPTION)
 }
 
+
 def get_src_indices(instance: List[str]) -> List[int]:
     """
     (English)
@@ -44,12 +47,13 @@ def get_src_indices(instance: List[str]) -> List[int]:
     src_word_ind = int(src_word_ind)
     sent_tok = sent.split(" ")
     if (src_word_ind > 0) and (sent_tok[src_word_ind - 1].lower() in ["the", "an", "a"]):
-        src_indices = [src_word_ind -1]
+        src_indices = [src_word_ind - 1]
     else:
         src_indices = []
     src_indices.append(src_word_ind)
 
     return src_indices
+
 
 def get_translated_professions(alignment_fn: str, ds: List[List[str]], bitext: List[List[str]]) -> List[str]:
     """
@@ -81,13 +85,11 @@ def get_translated_professions(alignment_fn: str, ds: List[List[str]], bitext: L
             cur_align[int(src)].append(int(tgt))
         full_alignments.append(cur_align)
 
-
     bitext_inds = [ind for ind, _ in bitext]
 
     alignments = []
     for ind in bitext_inds:
         alignments.append(full_alignments[ind])
-
 
     assert len(bitext) == len(alignments)
     assert len(src_indices) == len(alignments)
@@ -116,12 +118,13 @@ def output_predictions(target_sentences, gender_predictions, out_fn):
     Write gender predictions to output file, for comparison
     with human judgments.
     """
-    assert(len(list(target_sentences)) == len(list(gender_predictions)))
-    with open(out_fn, "w", encoding = "utf8") as fout:
+    assert (len(list(target_sentences)) == len(list(gender_predictions)))
+    with open(out_fn, "w", encoding="utf8") as fout:
         writer = csv.writer(fout, delimiter=",")
         writer.writerow(["Sentence", "Predicted gender"])
         for sent, gender in zip(target_sentences, gender_predictions):
             writer.writerow([sent, str(gender).split(".")[1]])
+
 
 def align_bitext_to_ds(bitext, ds):
     """
@@ -135,6 +138,7 @@ def align_bitext_to_ds(bitext, ds):
         new_bitext.append((ind, (en_sent, tgt_sent)))
     return new_bitext
 
+
 if __name__ == "__main__":
     # Parse command line arguments
     args = docopt(__doc__)
@@ -143,36 +147,41 @@ if __name__ == "__main__":
     align_fn = args["--align"]
     out_fn = args["--out"]
     lang = args["--lang"]
+    genders = args["--genders"]
+
+    LANGAUGE_PREDICTOR["lv"] = lambda: GendersFile(genders)
 
     debug = args["--debug"]
     if debug:
-        logging.basicConfig(level = logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG)
     else:
-        logging.basicConfig(level = logging.INFO)
+        logging.basicConfig(level=logging.INFO)
 
     gender_predictor = LANGAUGE_PREDICTOR[lang]()
 
-    ds = [line.strip().split("\t") for line in open(ds_fn, encoding = "utf8")]
+    ds = [line.strip().split("\t") for line in open(ds_fn, encoding="utf8")]
     full_bitext = [line.strip().split(" ||| ")
-              for line in open(bi_fn, encoding = "utf8")]
+                   for line in open(bi_fn, encoding="utf8")]
     bitext = align_bitext_to_ds(full_bitext, ds)
 
     translated_profs, tgt_inds = get_translated_professions(align_fn, ds, bitext)
-    assert(len(translated_profs) == len(tgt_inds))
+    assert (len(translated_profs) == len(tgt_inds))
 
-    target_sentences = [tgt_sent for (ind, (src_sent, tgt_sent)) in bitext]
+    if isinstance(gender_predictor, GendersFile):
+        target_sentences = [(ind, tgt_sent) for (ind, (src_sent, tgt_sent)) in bitext]
+    else:
+        target_sentences = [tgt_sent for (ind, (src_sent, tgt_sent)) in bitext]
 
     gender_predictions = [gender_predictor.get_gender(prof, translated_sent, entity_index, ds_entry)
                           for prof, translated_sent, entity_index, ds_entry
                           in tqdm(zip(translated_profs,
                                       target_sentences,
-                                      map(lambda ls:min(ls, default = -1), tgt_inds),
+                                      map(lambda ls: min(ls, default=-1), tgt_inds),
                                       ds))]
 
     # Output predictions
     output_predictions(target_sentences, gender_predictions, out_fn)
 
     d = evaluate_bias(ds, gender_predictions)
-
 
     logging.info("DONE")

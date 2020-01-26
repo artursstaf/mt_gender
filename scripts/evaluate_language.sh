@@ -11,6 +11,7 @@ set -e
 dataset=$1
 lang=$2
 trans_sys=$3
+genders=$4
 prefix=en-$lang
 
 # Prepare files for translation
@@ -34,7 +35,11 @@ $FAST_ALIGN_BASE/build/fast_align -i $trans_fn  -d -o -v > $align_fn
 # Evaluate
 mkdir -p ../data/human/$trans_sys/$lang/
 out_fn=../data/human/$trans_sys/$lang/${lang}.pred.csv
-python load_alignments.py --ds=$dataset  --bi=$trans_fn --align=$align_fn --lang=$lang --out=$out_fn
+if [ -z "$genders" ]; then
+    python load_alignments.py --ds=$dataset  --bi=$trans_fn --align=$align_fn --lang=$lang --out=$out_fn
+else
+    python load_alignments.py --ds=$dataset  --bi=$trans_fn --align=$align_fn --lang=$lang --out=$out_fn --genders=$genders
+fi
 
 # Prepare files for human annots
 # human_fn=../data/human/$trans_sys/$lang/${lang}.in.csv
