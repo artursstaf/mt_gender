@@ -149,15 +149,13 @@ if __name__ == "__main__":
     lang = args["--lang"]
     genders = args["--genders"]
 
-    LANGAUGE_PREDICTOR["lv"] = lambda: GendersFile(genders)
-
     debug = args["--debug"]
     if debug:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
 
-    gender_predictor = LANGAUGE_PREDICTOR[lang]()
+    gender_predictor = GendersFile(genders)
 
     ds = [line.strip().split("\t") for line in open(ds_fn, encoding="utf8")]
     full_bitext = [line.strip().split(" ||| ")
